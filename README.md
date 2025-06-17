@@ -1,5 +1,5 @@
 <!--
-# SPDX-FileCopyrightText: Copyright 2025 SAP SE or an SAP affiliate company and ironcore-dev contributors
+# SPDX-FileCopyrightText: 2025 SAP SE or an SAP affiliate company and IronCore contributors
 # SPDX-License-Identifier: Apache-2.0
 -->
 
@@ -35,7 +35,7 @@ make docker-build docker-push IMG=<some-registry>/network-operator:tag
 **Install the CRDs into the cluster:**
 
 ```sh
-make install
+make deploy-crds
 ```
 
 **Deploy the Manager to the cluster with the image specified by `IMG`:**
@@ -65,7 +65,7 @@ kubectl delete -k config/samples/
 **Delete the APIs(CRDs) from the cluster:**
 
 ```sh
-make uninstall
+make undeploy-crds
 ```
 
 **UnDeploy the controller from the cluster:**
@@ -84,7 +84,7 @@ Following are the steps to build the installer and distribute this project to us
 make build-installer IMG=<some-registry>/network-operator:tag
 ```
 
-NOTE: The makefile target mentioned above generates an 'install.yaml' file in the dist directory. This file contains all the resources built with Kustomize, which are necessary to install this project without its dependencies.
+> NOTE: The makefile target mentioned above generates an 'install.yaml' file in the dist directory. This file contains all the resources built with Kustomize, which are necessary to install this project without its dependencies.
 
 2. Using the installer
 
@@ -93,12 +93,6 @@ Users can just run kubectl apply -f <URL for YAML BUNDLE> to install the project
 ```sh
 kubectl apply -f https://raw.githubusercontent.com/<org>/network-operator/<tag or branch>/dist/install.yaml
 ```
-
-## Contributing
-
-**NOTE:** Run `make help` for more information on all potential `make` targets
-
-More information can be found via the [Kubebuilder Documentation](https://book.kubebuilder.io/introduction.html)
 
 ## Support, Feedback, Contributing
 
@@ -114,4 +108,4 @@ We as members, contributors, and leaders pledge to make participation in our com
 
 ## Licensing
 
-Copyright 2025 SAP SE or an SAP affiliate company and ironcore-dev contributors. Please see our [LICENSE](LICENSE) for copyright and license information. Detailed information including third-party components and their licensing/copyright information is available [via the REUSE tool](https://api.reuse.software/info/github.com/ironcore-dev/network-operator).
+Copyright 2025 SAP SE or an SAP affiliate company and IronCore contributors. Please see our [LICENSE](LICENSE) for copyright and license information. Detailed information including third-party components and their licensing/copyright information is available [via the REUSE tool](https://api.reuse.software/info/github.com/ironcore-dev/network-operator).
