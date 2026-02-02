@@ -11,6 +11,9 @@ spec:
     kind: BGPPeer
     listKind: BGPPeerList
     plural: bgppeers
+    shortNames:
+    - peer
+    - bgpneighbor
     singular: bgppeer
   scope: Namespaced
   versions:

@@ -17,6 +17,8 @@ spec:
     kind: Device
     listKind: DeviceList
     plural: devices
+    shortNames:
+    - dev
     singular: device
   scope: Namespaced
   versions:

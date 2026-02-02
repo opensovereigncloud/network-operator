@@ -18,6 +18,7 @@ spec:
     listKind: CertificateList
     plural: certificates
     shortNames:
+    - cert
     - netcert
     singular: certificate
   scope: Namespaced

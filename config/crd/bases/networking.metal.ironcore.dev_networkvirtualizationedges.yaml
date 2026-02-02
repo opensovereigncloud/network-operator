@@ -13,6 +13,7 @@ spec:
     plural: networkvirtualizationedges
     shortNames:
     - nve
+    - vtep
     singular: networkvirtualizationedge
   scope: Namespaced
   versions:
