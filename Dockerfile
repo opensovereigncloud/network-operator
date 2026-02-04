@@ -35,7 +35,8 @@ LABEL source_repository="https://github.com/ironcore-dev/network-operator" \
     org.opencontainers.image.url="https://github.com/ironcore-dev/network-operator" \
     org.opencontainers.image.created=${BININFO_BUILD_DATE} \
     org.opencontainers.image.revision=${BININFO_COMMIT_HASH} \
-    org.opencontainers.image.version=${BININFO_VERSION}
+    org.opencontainers.image.version=${BININFO_VERSION} \
+    org.opencontainers.image.licenses="Apache-2.0"
 
 COPY --from=builder /usr/bin/network-operator /manager
 
