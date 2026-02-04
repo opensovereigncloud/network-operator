@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 SAP SE or an SAP affiliate company and IronCore contributors
+# SPDX-License-Identifier: Apache-2.0
 version = 1
 SPDX-PackageName = "network-operator"
 SPDX-PackageSupplier = "IronCore authors <ospo@sap.com>"

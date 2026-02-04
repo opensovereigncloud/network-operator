@@ -1,3 +1,7 @@
+/**
+ * SPDX-FileCopyrightText: 2026 SAP SE or an SAP affiliate company and IronCore contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
 :root {
     --vp-home-hero-name-color: transparent;
     --vp-home-hero-name-background: -webkit-linear-gradient(120deg, #3456fe 30%, #41d1ff);
