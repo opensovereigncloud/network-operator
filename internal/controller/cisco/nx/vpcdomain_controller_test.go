@@ -216,7 +216,6 @@ var _ = Describe("VPCDomain Controller", func() {
 				g.Expect(resource.Status.Conditions[1].Status).To(Equal(metav1.ConditionTrue))
 				g.Expect(resource.Status.Conditions[2].Type).To(Equal(corev1.OperationalCondition))
 				g.Expect(resource.Status.Conditions[2].Status).To(Equal(metav1.ConditionTrue))
-
 			}).Should(Succeed())
 
 			By("Ensuring the resource is created in the provider")

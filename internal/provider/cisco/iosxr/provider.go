@@ -151,7 +151,6 @@ func (p *Provider) GetInterfaceStatus(ctx context.Context, req *provider.Interfa
 	}
 
 	err := p.client.GetState(ctx, state)
-
 	if err != nil {
 		return provider.InterfaceStatus{}, fmt.Errorf("failed to get interface status for %s: %w", req.Interface.Spec.Name, err)
 	}
