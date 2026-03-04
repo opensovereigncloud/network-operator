@@ -25,6 +25,11 @@ import (
 	"github.com/ironcore-dev/network-operator/internal/provider"
 )
 
+var (
+	errMissingAuthorizationHeader = errors.New("authorization header is missing")
+	errInvalidAuthorizationFormat = errors.New("invalid authorization header format")
+)
+
 func getClientIP(r *http.Request) (string, error) {
 	forwarded := r.Header.Get("X-Forwarded-For")
 	if forwarded != "" {
@@ -50,12 +55,12 @@ func getClientIP(r *http.Request) (string, error) {
 func getBearerToken(r *http.Request) (string, error) {
 	authHeader := r.Header.Get("Authorization")
 	if authHeader == "" {
-		return "", errors.New("authorization header is missing")
+		return "", errMissingAuthorizationHeader
 	}
 
 	parts := strings.Split(authHeader, " ")
 	if len(parts) != 2 || strings.ToLower(parts[0]) != "bearer" {
-		return "", errors.New("invalid authorization header format")
+		return "", errInvalidAuthorizationFormat
 	}
 
 	return parts[1], nil

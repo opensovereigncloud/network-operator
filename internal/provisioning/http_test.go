@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -87,42 +88,37 @@ func (p *MockProvider) VerifyProvisioned(ctx context.Context, conn *deviceutil.C
 
 func TestGetClientIP(t *testing.T) {
 	tests := []struct {
-		name          string
-		setupRequest  func(*http.Request)
-		expectedIP    string
-		expectedError bool
+		name         string
+		setupRequest func(*http.Request)
+		expectedIP   string
 	}{
 		{
 			name: "extract IP from X-Forwarded-For header with single IP",
 			setupRequest: func(req *http.Request) {
 				req.Header.Set("X-Forwarded-For", "192.168.1.100")
 			},
-			expectedIP:    "192.168.1.100",
-			expectedError: false,
+			expectedIP: "192.168.1.100",
 		},
 		{
 			name: "extract first IP from X-Forwarded-For header with multiple IPs",
 			setupRequest: func(req *http.Request) {
 				req.Header.Set("X-Forwarded-For", "192.168.1.100, 10.0.0.1, 172.16.0.1")
 			},
-			expectedIP:    "192.168.1.100",
-			expectedError: false,
+			expectedIP: "192.168.1.100",
 		},
 		{
 			name: "extract IP from X-Real-IP header",
 			setupRequest: func(req *http.Request) {
 				req.Header.Set("X-Real-IP", "192.168.1.200")
 			},
-			expectedIP:    "192.168.1.200",
-			expectedError: false,
+			expectedIP: "192.168.1.200",
 		},
 		{
 			name: "extract IP from RemoteAddr as fallback",
 			setupRequest: func(req *http.Request) {
 				req.RemoteAddr = "192.168.1.50:12345"
 			},
-			expectedIP:    "192.168.1.50",
-			expectedError: false,
+			expectedIP: "192.168.1.50",
 		},
 		{
 			name: "prioritize X-Forwarded-For over X-Real-IP",
@@ -130,8 +126,7 @@ func TestGetClientIP(t *testing.T) {
 				req.Header.Set("X-Forwarded-For", "192.168.1.100")
 				req.Header.Set("X-Real-IP", "192.168.1.200")
 			},
-			expectedIP:    "192.168.1.100",
-			expectedError: false,
+			expectedIP: "192.168.1.100",
 		},
 	}
 
@@ -141,12 +136,8 @@ func TestGetClientIP(t *testing.T) {
 			tt.setupRequest(req)
 
 			ip, err := getClientIP(req)
-			if tt.expectedError {
-				assert.Error(t, err)
-			} else {
-				assert.NoError(t, err)
-				assert.Equal(t, tt.expectedIP, ip)
-			}
+			assert.NoError(t, err)
+			assert.Equal(t, tt.expectedIP, ip)
 		})
 	}
 }
@@ -156,38 +147,32 @@ func TestGetBearerToken(t *testing.T) {
 		name          string
 		authorization string
 		expectedToken string
-		expectedError bool
-		errorContains string
+		expectedErr   error
 	}{
 		{
 			name:          "extract valid bearer token",
 			authorization: "Bearer abc123token",
 			expectedToken: "abc123token",
-			expectedError: false,
 		},
 		{
 			name:          "missing authorization header",
 			authorization: "",
-			expectedError: true,
-			errorContains: "authorization header is missing",
+			expectedErr:   errMissingAuthorizationHeader,
 		},
 		{
 			name:          "invalid format without Bearer prefix",
 			authorization: "abc123token",
-			expectedError: true,
-			errorContains: "invalid authorization header format",
+			expectedErr:   errInvalidAuthorizationFormat,
 		},
 		{
 			name:          "wrong auth type",
 			authorization: "Basic abc123token",
-			expectedError: true,
-			errorContains: "invalid authorization header format",
+			expectedErr:   errInvalidAuthorizationFormat,
 		},
 		{
 			name:          "too many parts",
 			authorization: "Bearer abc123 extra",
-			expectedError: true,
-			errorContains: "invalid authorization header format",
+			expectedErr:   errInvalidAuthorizationFormat,
 		},
 	}
 
@@ -199,15 +184,12 @@ func TestGetBearerToken(t *testing.T) {
 			}
 
 			token, err := getBearerToken(req)
-			if tt.expectedError {
-				assert.Error(t, err)
-				if tt.errorContains != "" {
-					assert.Contains(t, err.Error(), tt.errorContains)
-				}
-			} else {
-				assert.NoError(t, err)
-				assert.Equal(t, tt.expectedToken, token)
+			if tt.expectedErr != nil {
+				require.ErrorIs(t, err, tt.expectedErr)
+				return
 			}
+			require.NoError(t, err)
+			assert.Equal(t, tt.expectedToken, token)
 		})
 	}
 }
@@ -216,7 +198,7 @@ func TestHandleStatusReport(t *testing.T) {
 	tests := []struct {
 		name           string
 		method         string
-		params         map[string]string
+		serial         string
 		authorization  string
 		body           any
 		device         *v1alpha1.Device
@@ -233,7 +215,7 @@ func TestHandleStatusReport(t *testing.T) {
 		{
 			name:           "reject requests without authorization header",
 			method:         http.MethodPut,
-			params:         map[string]string{"serial": "ABC123"},
+			serial:         "ABC123",
 			body:           StatusReport{Status: v1alpha1.ProvisioningScriptExecutionStarted},
 			expectedStatus: http.StatusUnauthorized,
 			expectedBody:   "Unauthorized",
@@ -242,7 +224,7 @@ func TestHandleStatusReport(t *testing.T) {
 			name:           "reject requests with invalid JSON body",
 			method:         http.MethodPut,
 			authorization:  "Bearer validtoken",
-			params:         map[string]string{"serial": "ABC123"},
+			serial:         "ABC123",
 			body:           "invalid json",
 			expectedStatus: http.StatusBadRequest,
 			expectedBody:   "Invalid JSON body",
@@ -251,7 +233,7 @@ func TestHandleStatusReport(t *testing.T) {
 			name:           "device not found",
 			method:         http.MethodPut,
 			authorization:  "Bearer validtoken",
-			params:         map[string]string{"serial": "NONEXISTENT"},
+			serial:         "NONEXISTENT",
 			body:           StatusReport{Status: v1alpha1.ProvisioningScriptExecutionStarted},
 			expectedStatus: http.StatusInternalServerError,
 			expectedBody:   "Failed to find device",
@@ -260,7 +242,7 @@ func TestHandleStatusReport(t *testing.T) {
 			name:          "no active provisioning found",
 			method:        http.MethodPut,
 			authorization: "Bearer validtoken",
-			params:        map[string]string{"serial": "ABC123"},
+			serial:        "ABC123",
 			body:          StatusReport{Status: v1alpha1.ProvisioningScriptExecutionStarted},
 			device: &v1alpha1.Device{
 				ObjectMeta: metav1.ObjectMeta{
@@ -277,7 +259,7 @@ func TestHandleStatusReport(t *testing.T) {
 			name:          "reject invalid token",
 			method:        http.MethodPut,
 			authorization: "Bearer wrongtoken",
-			params:        map[string]string{"serial": "ABC123"},
+			serial:        "ABC123",
 			body:          StatusReport{Status: v1alpha1.ProvisioningDownloadingImage},
 			device: &v1alpha1.Device{
 				ObjectMeta: metav1.ObjectMeta{
@@ -297,7 +279,7 @@ func TestHandleStatusReport(t *testing.T) {
 			name:          "successfully update device status for successful provisioning",
 			method:        http.MethodPut,
 			authorization: "Bearer validtoken",
-			params:        map[string]string{"serial": "ABC123"},
+			serial:        "ABC123",
 			body:          StatusReport{Status: v1alpha1.ProvisioningRebootingDevice, Detail: "Device is rebooting"},
 			device: &v1alpha1.Device{
 				ObjectMeta: metav1.ObjectMeta{
@@ -321,7 +303,7 @@ func TestHandleStatusReport(t *testing.T) {
 			name:          "successfully update device status for failed provisioning",
 			method:        http.MethodPut,
 			authorization: "Bearer validtoken",
-			params:        map[string]string{"serial": "ABC123"},
+			serial:        "ABC123",
 			body:          StatusReport{Status: v1alpha1.ProvisioningScriptExecutionFailed, Detail: "Script execution failed"},
 			device: &v1alpha1.Device{
 				ObjectMeta: metav1.ObjectMeta{
@@ -345,30 +327,27 @@ func TestHandleStatusReport(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			var bodyReader *bytes.Buffer
+			var body io.Reader
 			if tt.body != nil {
-				if str, ok := tt.body.(string); ok {
-					bodyReader = bytes.NewBufferString(str)
-				} else {
-					bodyBytes, _ := json.Marshal(tt.body) //nolint:errcheck
-					bodyReader = bytes.NewBuffer(bodyBytes)
+				switch v := tt.body.(type) {
+				case string:
+					body = bytes.NewBufferString(v)
+				default:
+					buf, err := json.Marshal(v)
+					require.NoError(t, err)
+					body = bytes.NewReader(buf)
 				}
-			} else {
-				bodyReader = bytes.NewBufferString("")
 			}
 
-			req := httptest.NewRequest(tt.method, "/provisioning/status-report", bodyReader)
-			if tt.params != nil {
-				q := req.URL.Query()
-				for k, v := range tt.params {
-					q.Add(k, v)
-				}
-				req.URL.RawQuery = q.Encode()
+			url := "/provisioning/status-report"
+			if tt.serial != "" {
+				url += "?serial=" + tt.serial
 			}
+
+			req := httptest.NewRequest(tt.method, url, body)
 			if tt.authorization != "" {
 				req.Header.Set("Authorization", tt.authorization)
 			}
-			rr := httptest.NewRecorder()
 
 			clientBuilder := fake.NewClientBuilder().WithScheme(scheme.Scheme)
 			if tt.device != nil {
@@ -381,6 +360,8 @@ func TestHandleStatusReport(t *testing.T) {
 				Logger:   klog.NewKlogr(),
 				Recorder: record.NewFakeRecorder(10),
 			}
+
+			rr := httptest.NewRecorder()
 			server.HandleStatusReport(rr, req)
 
 			assert.Equal(t, tt.expectedStatus, rr.Code)
@@ -388,11 +369,11 @@ func TestHandleStatusReport(t *testing.T) {
 				assert.Contains(t, rr.Body.String(), tt.expectedBody)
 			}
 
-			if tt.validateDevice != nil && tt.device != nil {
-				var updatedDevice v1alpha1.Device
-				err := k8sClient.Get(context.Background(), types.NamespacedName{Name: tt.device.Name, Namespace: tt.device.Namespace}, &updatedDevice)
+			if tt.validateDevice != nil {
+				var device v1alpha1.Device
+				err := k8sClient.Get(context.Background(), types.NamespacedName{Name: tt.device.Name, Namespace: tt.device.Namespace}, &device)
 				require.NoError(t, err)
-				tt.validateDevice(t, &updatedDevice)
+				tt.validateDevice(t, &device)
 			}
 		})
 	}
@@ -401,12 +382,11 @@ func TestHandleStatusReport(t *testing.T) {
 func TestHandleProvisioningRequest(t *testing.T) {
 	tests := []struct {
 		name             string
-		querySerial      string
+		serial           string
 		remoteAddr       string
 		device           *v1alpha1.Device
 		secret           *corev1.Secret
 		validateSourceIP bool
-		mockProvider     *MockProvider
 		expectedStatus   int
 		expectedBody     string
 		validateResponse func(*testing.T, *ProvisioningResponse)
@@ -418,14 +398,14 @@ func TestHandleProvisioningRequest(t *testing.T) {
 		},
 		{
 			name:           "device not found",
-			querySerial:    "NONEXISTENT",
+			serial:         "NONEXISTENT",
 			expectedStatus: http.StatusInternalServerError,
 			expectedBody:   "Failed to find device",
 		},
 		{
-			name:        "reject request when source IP validation fails",
-			querySerial: "ABC123",
-			remoteAddr:  "192.168.1.100:12345",
+			name:       "reject request when source IP validation fails",
+			serial:     "ABC123",
+			remoteAddr: "192.168.1.100:12345",
 			device: &v1alpha1.Device{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-device",
@@ -442,9 +422,9 @@ func TestHandleProvisioningRequest(t *testing.T) {
 			expectedBody:     "Source IP does not match device IP",
 		},
 		{
-			name:        "return error when no active provisioning and the device is active",
-			querySerial: "ABC123",
-			remoteAddr:  "192.168.1.100:12345",
+			name:       "return error when no active provisioning and the device is active",
+			serial:     "ABC123",
+			remoteAddr: "192.168.1.100:12345",
 			device: &v1alpha1.Device{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-device",
@@ -472,28 +452,26 @@ func TestHandleProvisioningRequest(t *testing.T) {
 					"password": []byte("secret"),
 				},
 			},
-			mockProvider:     new(MockProvider),
 			validateSourceIP: true,
 			expectedStatus:   http.StatusPreconditionRequired,
 			expectedBody:     "Failed to create provisioning entry",
 		},
 		{
 			name:             "successfully return provisioning configuration",
-			querySerial:      "ABC123",
+			serial:           "ABC123",
 			remoteAddr:       "192.168.1.100:12345",
 			device:           testDevice.DeepCopy(),
 			secret:           testSecret.DeepCopy(),
 			validateSourceIP: true,
-			mockProvider:     new(MockProvider),
 			expectedStatus:   http.StatusOK,
-			validateResponse: func(t *testing.T, response *ProvisioningResponse) {
-				assert.Equal(t, "validtoken", response.ProvisioningToken)
-				assert.Equal(t, "http://example.com/image.bin", response.Image.URL)
-				assert.Equal(t, "test-device", response.Hostname)
-				assert.Len(t, response.UserAccounts, 1)
-				assert.Equal(t, "admin", response.UserAccounts[0].Username)
-				assert.Equal(t, "hashedpass", response.UserAccounts[0].HashedPassword)
-				assert.Equal(t, "sha256", response.UserAccounts[0].HashAlgorithm)
+			validateResponse: func(t *testing.T, res *ProvisioningResponse) {
+				assert.Equal(t, "validtoken", res.ProvisioningToken)
+				assert.Equal(t, "http://example.com/image.bin", res.Image.URL)
+				assert.Equal(t, "test-device", res.Hostname)
+				assert.Len(t, res.UserAccounts, 1)
+				assert.Equal(t, "admin", res.UserAccounts[0].Username)
+				assert.Equal(t, "hashedpass", res.UserAccounts[0].HashedPassword)
+				assert.Equal(t, "sha256", res.UserAccounts[0].HashAlgorithm)
 			},
 		},
 	}
@@ -501,14 +479,14 @@ func TestHandleProvisioningRequest(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			url := "/provisioning/config"
-			if tt.querySerial != "" {
-				url += "?serial=" + tt.querySerial
+			if tt.serial != "" {
+				url += "?serial=" + tt.serial
 			}
+
 			req := httptest.NewRequest(http.MethodGet, url, http.NoBody)
 			if tt.remoteAddr != "" {
 				req.RemoteAddr = tt.remoteAddr
 			}
-			rr := httptest.NewRecorder()
 
 			clientBuilder := fake.NewClientBuilder().WithScheme(scheme.Scheme)
 			if tt.device != nil {
@@ -523,8 +501,10 @@ func TestHandleProvisioningRequest(t *testing.T) {
 				Client:           k8sClient,
 				Logger:           klog.NewKlogr(),
 				ValidateSourceIP: tt.validateSourceIP,
-				Provider:         tt.mockProvider,
+				Provider:         new(MockProvider),
 			}
+
+			rr := httptest.NewRecorder()
 			server.HandleProvisioningRequest(rr, req)
 
 			assert.Equal(t, tt.expectedStatus, rr.Code)
@@ -534,10 +514,10 @@ func TestHandleProvisioningRequest(t *testing.T) {
 
 			if tt.validateResponse != nil {
 				assert.Equal(t, "application/json", rr.Header().Get("Content-Type"))
-				var response ProvisioningResponse
-				err := json.Unmarshal(rr.Body.Bytes(), &response)
+				var res ProvisioningResponse
+				err := json.Unmarshal(rr.Body.Bytes(), &res)
 				require.NoError(t, err)
-				tt.validateResponse(t, &response)
+				tt.validateResponse(t, &res)
 			}
 		})
 	}
@@ -547,7 +527,7 @@ func TestGetDeviceCertificate(t *testing.T) {
 	tests := []struct {
 		name             string
 		method           string
-		querySerial      string
+		serial           string
 		authorization    string
 		device           *v1alpha1.Device
 		certificates     []*v1alpha1.Certificate
@@ -559,7 +539,7 @@ func TestGetDeviceCertificate(t *testing.T) {
 		{
 			name:           "reject non-GET requests",
 			method:         http.MethodPost,
-			querySerial:    "ABC123",
+			serial:         "ABC123",
 			authorization:  "Bearer validtoken",
 			expectedStatus: http.StatusMethodNotAllowed,
 			expectedBody:   "Method not allowed",
@@ -567,7 +547,7 @@ func TestGetDeviceCertificate(t *testing.T) {
 		{
 			name:           "reject requests without authorization header",
 			method:         http.MethodGet,
-			querySerial:    "ABC123",
+			serial:         "ABC123",
 			expectedStatus: http.StatusUnauthorized,
 			expectedBody:   "Unauthorized",
 		},
@@ -581,7 +561,7 @@ func TestGetDeviceCertificate(t *testing.T) {
 		{
 			name:           "device not found",
 			method:         http.MethodGet,
-			querySerial:    "NONEXISTENT",
+			serial:         "NONEXISTENT",
 			authorization:  "Bearer validtoken",
 			expectedStatus: http.StatusInternalServerError,
 			expectedBody:   "Failed to find device",
@@ -589,7 +569,7 @@ func TestGetDeviceCertificate(t *testing.T) {
 		{
 			name:          "no active provisioning found",
 			method:        http.MethodGet,
-			querySerial:   "ABC123",
+			serial:        "ABC123",
 			authorization: "Bearer validtoken",
 			device: &v1alpha1.Device{
 				ObjectMeta: metav1.ObjectMeta{
@@ -605,7 +585,7 @@ func TestGetDeviceCertificate(t *testing.T) {
 		{
 			name:          "invalid token",
 			method:        http.MethodGet,
-			querySerial:   "ABC123",
+			serial:        "ABC123",
 			authorization: "Bearer wrongtoken",
 			device: &v1alpha1.Device{
 				ObjectMeta: metav1.ObjectMeta{
@@ -624,7 +604,7 @@ func TestGetDeviceCertificate(t *testing.T) {
 		{
 			name:          "no certificate found for device",
 			method:        http.MethodGet,
-			querySerial:   "ABC123",
+			serial:        "ABC123",
 			authorization: "Bearer validtoken",
 			device: &v1alpha1.Device{
 				ObjectMeta: metav1.ObjectMeta{
@@ -643,7 +623,7 @@ func TestGetDeviceCertificate(t *testing.T) {
 		{
 			name:          "multiple certificates found for device",
 			method:        http.MethodGet,
-			querySerial:   "ABC123",
+			serial:        "ABC123",
 			authorization: "Bearer validtoken",
 			device: &v1alpha1.Device{
 				ObjectMeta: metav1.ObjectMeta{
@@ -684,7 +664,7 @@ func TestGetDeviceCertificate(t *testing.T) {
 		{
 			name:          "certificate secret not found",
 			method:        http.MethodGet,
-			querySerial:   "ABC123",
+			serial:        "ABC123",
 			authorization: "Bearer validtoken",
 			device: &v1alpha1.Device{
 				ObjectMeta: metav1.ObjectMeta{
@@ -715,7 +695,7 @@ func TestGetDeviceCertificate(t *testing.T) {
 		{
 			name:          "incomplete certificate data - missing private key",
 			method:        http.MethodGet,
-			querySerial:   "ABC123",
+			serial:        "ABC123",
 			authorization: "Bearer validtoken",
 			device: &v1alpha1.Device{
 				ObjectMeta: metav1.ObjectMeta{
@@ -757,7 +737,7 @@ func TestGetDeviceCertificate(t *testing.T) {
 		{
 			name:          "successfully return device certificate with all fields",
 			method:        http.MethodGet,
-			querySerial:   "ABC123",
+			serial:        "ABC123",
 			authorization: "Bearer validtoken",
 			device: &v1alpha1.Device{
 				ObjectMeta: metav1.ObjectMeta{
@@ -805,7 +785,7 @@ func TestGetDeviceCertificate(t *testing.T) {
 		{
 			name:          "successfully return device certificate without CA certificate",
 			method:        http.MethodGet,
-			querySerial:   "ABC123",
+			serial:        "ABC123",
 			authorization: "Bearer validtoken",
 			device: &v1alpha1.Device{
 				ObjectMeta: metav1.ObjectMeta{
@@ -854,14 +834,14 @@ func TestGetDeviceCertificate(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			url := "/provisioning/device-certificate"
-			if tt.querySerial != "" {
-				url += "?serial=" + tt.querySerial
+			if tt.serial != "" {
+				url += "?serial=" + tt.serial
 			}
+
 			req := httptest.NewRequest(tt.method, url, http.NoBody)
 			if tt.authorization != "" {
 				req.Header.Set("Authorization", tt.authorization)
 			}
-			rr := httptest.NewRecorder()
 
 			clientBuilder := fake.NewClientBuilder().WithScheme(scheme.Scheme)
 			if tt.device != nil {
@@ -879,6 +859,8 @@ func TestGetDeviceCertificate(t *testing.T) {
 				Client: k8sClient,
 				Logger: klog.NewKlogr(),
 			}
+
+			rr := httptest.NewRecorder()
 			server.GetDeviceCertificate(rr, req)
 
 			assert.Equal(t, tt.expectedStatus, rr.Code)
@@ -901,7 +883,7 @@ func TestGetMTLSClientCA(t *testing.T) {
 	tests := []struct {
 		name           string
 		method         string
-		querySerial    string
+		serial         string
 		authorization  string
 		device         *v1alpha1.Device
 		caSecret       *corev1.Secret
@@ -912,7 +894,7 @@ func TestGetMTLSClientCA(t *testing.T) {
 		{
 			name:           "reject non-GET requests",
 			method:         http.MethodPost,
-			querySerial:    "ABC123",
+			serial:         "ABC123",
 			authorization:  "Bearer validtoken",
 			expectedStatus: http.StatusMethodNotAllowed,
 			expectedBody:   "Method not allowed",
@@ -920,7 +902,7 @@ func TestGetMTLSClientCA(t *testing.T) {
 		{
 			name:           "reject requests without authorization header",
 			method:         http.MethodGet,
-			querySerial:    "ABC123",
+			serial:         "ABC123",
 			expectedStatus: http.StatusUnauthorized,
 			expectedBody:   "Unauthorized",
 		},
@@ -934,7 +916,7 @@ func TestGetMTLSClientCA(t *testing.T) {
 		{
 			name:           "device not found",
 			method:         http.MethodGet,
-			querySerial:    "NONEXISTENT",
+			serial:         "NONEXISTENT",
 			authorization:  "Bearer validtoken",
 			expectedStatus: http.StatusInternalServerError,
 			expectedBody:   "Failed to find device",
@@ -942,7 +924,7 @@ func TestGetMTLSClientCA(t *testing.T) {
 		{
 			name:          "no active provisioning found",
 			method:        http.MethodGet,
-			querySerial:   "ABC123",
+			serial:        "ABC123",
 			authorization: "Bearer validtoken",
 			device: &v1alpha1.Device{
 				ObjectMeta: metav1.ObjectMeta{
@@ -958,7 +940,7 @@ func TestGetMTLSClientCA(t *testing.T) {
 		{
 			name:          "invalid token",
 			method:        http.MethodGet,
-			querySerial:   "ABC123",
+			serial:        "ABC123",
 			authorization: "Bearer wrongtoken",
 			device: &v1alpha1.Device{
 				ObjectMeta: metav1.ObjectMeta{
@@ -977,7 +959,7 @@ func TestGetMTLSClientCA(t *testing.T) {
 		{
 			name:          "device has no MTLS configuration",
 			method:        http.MethodGet,
-			querySerial:   "ABC123",
+			serial:        "ABC123",
 			authorization: "Bearer validtoken",
 			device: &v1alpha1.Device{
 				ObjectMeta: metav1.ObjectMeta{
@@ -1001,7 +983,7 @@ func TestGetMTLSClientCA(t *testing.T) {
 		{
 			name:          "device has no MTLS configured but a CA for server validation",
 			method:        http.MethodGet,
-			querySerial:   "ABC123",
+			serial:        "ABC123",
 			authorization: "Bearer validtoken",
 			device: &v1alpha1.Device{
 				ObjectMeta: metav1.ObjectMeta{
@@ -1033,7 +1015,7 @@ func TestGetMTLSClientCA(t *testing.T) {
 		{
 			name:          "CA secret not found",
 			method:        http.MethodGet,
-			querySerial:   "ABC123",
+			serial:        "ABC123",
 			authorization: "Bearer validtoken",
 			device: &v1alpha1.Device{
 				ObjectMeta: metav1.ObjectMeta{
@@ -1064,7 +1046,7 @@ func TestGetMTLSClientCA(t *testing.T) {
 		{
 			name:          "successfully return MTLS client CA certificate",
 			method:        http.MethodGet,
-			querySerial:   "ABC123",
+			serial:        "ABC123",
 			authorization: "Bearer validtoken",
 			device: &v1alpha1.Device{
 				ObjectMeta: metav1.ObjectMeta{
@@ -1108,14 +1090,14 @@ func TestGetMTLSClientCA(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			url := "/provisioning/mtls-client-ca"
-			if tt.querySerial != "" {
-				url += "?serial=" + tt.querySerial
+			if tt.serial != "" {
+				url += "?serial=" + tt.serial
 			}
+
 			req := httptest.NewRequest(tt.method, url, http.NoBody)
 			if tt.authorization != "" {
 				req.Header.Set("Authorization", tt.authorization)
 			}
-			rr := httptest.NewRecorder()
 
 			clientBuilder := fake.NewClientBuilder().WithScheme(scheme.Scheme)
 			if tt.device != nil {
@@ -1130,6 +1112,8 @@ func TestGetMTLSClientCA(t *testing.T) {
 				Client: k8sClient,
 				Logger: klog.NewKlogr(),
 			}
+
+			rr := httptest.NewRecorder()
 			server.GetMTLSClientCA(rr, req)
 
 			assert.Equal(t, tt.expectedStatus, rr.Code)
