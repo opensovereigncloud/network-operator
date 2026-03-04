@@ -23,6 +23,9 @@ dist/*
 # Kubernetes Generated files - skip generated files, except for vendored files
 !vendor/**/zz_generated.*
 
+# Helm dependency chart archives
+charts/**/*.tgz
+
 # editor and IDE paraphernalia
 .idea
 .vscode
