@@ -1059,6 +1059,41 @@ _Appears in:_
 | `tls` _[TLS](#tls)_ | Transport credentials for grpc connection to the switch. |  | Optional: \{\} <br /> |
 
 
+#### Ethernet
+
+
+
+Ethernet defines the ethernet-specific configuration for physical interfaces.
+
+
+
+_Appears in:_
+- [InterfaceSpec](#interfacespec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `fecMode` _[FECMode](#fecmode)_ | FECMode specifies the Forward Error Correction mode for the interface.<br />FEC provides error detection and correction at the physical layer, improving link reliability.<br />When not specified, the FEC mode defaults to "auto" where the device negotiates the appropriate mode. |  | Enum: [FC RS528 Disabled] <br />Optional: \{\} <br /> |
+
+
+#### FECMode
+
+_Underlying type:_ _string_
+
+FECMode represents the Forward Error Correction mode for Ethernet Interfaces.
+
+_Validation:_
+- Enum: [FC RS528 Disabled]
+
+_Appears in:_
+- [Ethernet](#ethernet)
+
+| Field | Description |
+| --- | --- |
+| `FC` | FECModeFC indicates IEEE 802.3 Clause 74 Fire Code FEC for NRZ modulation (<100G).<br /> |
+| `RS528` | FECModeRS528 indicates IEEE 802.3 Clause 91 Reed-Solomon FEC (528,514) for NRZ modulation.<br /> |
+| `Disabled` | FECModeDisabled indicates FEC is administratively disabled.<br /> |
+
+
 #### GNMI
 
 
@@ -1311,6 +1346,7 @@ _Appears in:_
 | `vlanRef` _[LocalObjectReference](#localobjectreference)_ | VlanRef is a reference to the VLAN resource that this interface provides routing for.<br />This is only applicable for interfaces of type RoutedVLAN.<br />The referenced VLAN must exist in the same namespace. |  | Optional: \{\} <br /> |
 | `vrfRef` _[LocalObjectReference](#localobjectreference)_ | VrfRef is a reference to the VRF resource that this interface belongs to.<br />If not specified, the interface will be part of the default VRF.<br />This is only applicable for Layer 3 interfaces.<br />The referenced VRF must exist in the same namespace. |  | Optional: \{\} <br /> |
 | `bfd` _[BFD](#bfd)_ | BFD defines the Bidirectional Forwarding Detection configuration for the interface.<br />BFD is only applicable for Layer 3 interfaces (Physical, Loopback, RoutedVLAN). |  | Optional: \{\} <br /> |
+| `ethernet` _[Ethernet](#ethernet)_ | Ethernet defines the ethernet-specific configuration for physical interfaces.<br />This configuration is only applicable to Physical interfaces.<br />When omitted, ethernet parameters use their default values (e.g., FEC mode defaults to auto). |  | Optional: \{\} <br /> |
 
 
 #### InterfaceStatus
