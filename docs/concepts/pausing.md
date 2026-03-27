@@ -53,7 +53,7 @@ kubectl annotate vrf vrf-prod networking.metal.ironcore.dev/paused-
 Every resource reflects its pause state in `.status.conditions` with a `Paused`
 condition. The `Paused` column is visible with `-o wide`:
 
-```
+```bash
 $ kubectl get vrfs -o wide
 NAME       VRF    DEVICE    READY     PAUSED   AGE
 vrf-prod   prod   leaf-01   Unknown   True     5m
@@ -87,7 +87,7 @@ conditions:
 
 The `kubectl get` output reflects this:
 
-```
+```bash 
 $ kubectl get vrfs -o wide
 NAME       VRF    DEVICE    READY     PAUSED   AGE
 vrf-prod   prod   leaf-01   Unknown   True     5m
