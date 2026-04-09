@@ -183,6 +183,120 @@ var _ = Describe("Device Controller", func() {
 			}).Should(Succeed())
 		})
 
+		It("Should keep the device provisioning before timeout", func() {
+			By("Creating the custom resource for the Kind Device")
+			device := &v1alpha1.Device{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      name,
+					Namespace: metav1.NamespaceDefault,
+				},
+				Spec: v1alpha1.DeviceSpec{
+					Endpoint: v1alpha1.Endpoint{
+						Address: "192.168.10.2:9339",
+						SecretRef: &v1alpha1.SecretReference{
+							Name: name,
+						},
+					},
+					Provisioning: &v1alpha1.Provisioning{
+						Image: v1alpha1.Image{
+							URL:          "http://example.com/nxos.bin",
+							Checksum:     "d41d8cd98f00b204e9800998ecf8427e",
+							ChecksumType: v1alpha1.ChecksumTypeMD5,
+						},
+						BootScript: v1alpha1.TemplateSource{
+							Inline: new("boot nxos.bin"),
+						},
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, device)).To(Succeed())
+
+			By("Waiting for the device to enter provisioning")
+			Eventually(func(g Gomega) {
+				resource := &v1alpha1.Device{}
+				g.Expect(k8sClient.Get(ctx, key, resource)).To(Succeed())
+				g.Expect(resource.Status.Phase).To(Equal(v1alpha1.DevicePhaseProvisioning))
+			}).Should(Succeed())
+
+			Eventually(func(g Gomega) {
+				resource := &v1alpha1.Device{}
+				g.Expect(k8sClient.Get(ctx, key, resource)).To(Succeed())
+
+				patch := resource.DeepCopy()
+				patch.Status.Phase = v1alpha1.DevicePhaseProvisioning
+				patch.Status.Provisioning = []v1alpha1.ProvisioningInfo{{
+					Token:     "test-token",
+					StartTime: metav1.NewTime(time.Now().Add(-59 * time.Minute)),
+				}}
+
+				g.Expect(k8sClient.Status().Patch(ctx, patch, client.MergeFrom(resource))).To(Succeed())
+			}).Should(Succeed())
+
+			By("Verifying the device stays in provisioning phase")
+			Consistently(func(g Gomega) v1alpha1.DevicePhase {
+				resource := &v1alpha1.Device{}
+				g.Expect(k8sClient.Get(ctx, key, resource)).To(Succeed())
+				return resource.Status.Phase
+			}, time.Second, 100*time.Millisecond).Should(Equal(v1alpha1.DevicePhaseProvisioning))
+		})
+
+		It("Should fail provisioning after the timeout threshold", func() {
+			By("Creating the custom resource for the Kind Device")
+			device := &v1alpha1.Device{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      name,
+					Namespace: metav1.NamespaceDefault,
+				},
+				Spec: v1alpha1.DeviceSpec{
+					Endpoint: v1alpha1.Endpoint{
+						Address: "192.168.10.2:9339",
+						SecretRef: &v1alpha1.SecretReference{
+							Name: name,
+						},
+					},
+					Provisioning: &v1alpha1.Provisioning{
+						Image: v1alpha1.Image{
+							URL:          "http://example.com/nxos.bin",
+							Checksum:     "d41d8cd98f00b204e9800998ecf8427e",
+							ChecksumType: v1alpha1.ChecksumTypeMD5,
+						},
+						BootScript: v1alpha1.TemplateSource{
+							Inline: new("boot nxos.bin"),
+						},
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, device)).To(Succeed())
+
+			By("Waiting for the device to enter provisioning")
+			Eventually(func(g Gomega) {
+				resource := &v1alpha1.Device{}
+				g.Expect(k8sClient.Get(ctx, key, resource)).To(Succeed())
+				g.Expect(resource.Status.Phase).To(Equal(v1alpha1.DevicePhaseProvisioning))
+			}).Should(Succeed())
+
+			Eventually(func(g Gomega) {
+				resource := &v1alpha1.Device{}
+				g.Expect(k8sClient.Get(ctx, key, resource)).To(Succeed())
+
+				patch := resource.DeepCopy()
+				patch.Status.Phase = v1alpha1.DevicePhaseProvisioning
+				patch.Status.Provisioning = []v1alpha1.ProvisioningInfo{{
+					Token:     "test-token",
+					StartTime: metav1.NewTime(time.Now().Add(-61 * time.Minute)),
+				}}
+
+				g.Expect(k8sClient.Status().Patch(ctx, patch, client.MergeFrom(resource))).To(Succeed())
+			}).Should(Succeed())
+
+			By("Verifying the device transitions to Failed phase")
+			Eventually(func(g Gomega) {
+				resource := &v1alpha1.Device{}
+				g.Expect(k8sClient.Get(ctx, key, resource)).To(Succeed())
+				g.Expect(resource.Status.Phase).To(Equal(v1alpha1.DevicePhaseFailed))
+			}).Should(Succeed())
+		})
+
 		It("Should keep an existing mismatched serial label", func() {
 			By("Creating the custom resource for the Kind Device with a pre-set serial label")
 			device := &v1alpha1.Device{
