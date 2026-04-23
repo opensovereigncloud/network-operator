@@ -1105,7 +1105,7 @@ func (p *Provider) EnsureInterface(ctx context.Context, req *provider.EnsureInte
 		icmp := new(ICMPIf)
 		icmp.ID = name
 		switch req.Interface.Spec.Type {
-		case v1alpha1.InterfaceTypePhysical, v1alpha1.InterfaceTypeAggregate:
+		case v1alpha1.InterfaceTypePhysical, v1alpha1.InterfaceTypeAggregate, v1alpha1.InterfaceTypeSubinterface:
 			if err := p.client.Delete(ctx, icmp); err != nil {
 				return err
 			}
