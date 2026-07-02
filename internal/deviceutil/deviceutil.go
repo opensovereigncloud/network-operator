@@ -112,7 +112,7 @@ type Connection struct {
 	// Username for basic authentication. Might be empty if the device does not require authentication.
 	Username string
 	// Password for basic authentication. Might be empty if the device does not require authentication.
-	Password string // #nosec G117
+	Password string `json:"-"`
 	// TLS configuration for the connection.
 	TLS *tls.Config
 }

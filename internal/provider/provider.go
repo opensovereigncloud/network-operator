@@ -194,7 +194,7 @@ type UserProvider interface {
 
 type EnsureUserRequest struct {
 	Username       string
-	Password       string // #nosec G117
+	Password       string `json:"-"`
 	SSHKey         string
 	Roles          []string
 	ProviderConfig *ProviderConfig
@@ -623,6 +623,32 @@ type NVEProvider interface {
 	DeleteNVE(context.Context, *NVERequest) error
 	// GetInterfaceStatus call is responsible for retrieving the current status of the Interface from the provider.
 	GetNVEStatus(context.Context, *NVERequest) (NVEStatus, error)
+}
+
+// AAAProvider is the interface for the realization of the AAA objects over different providers.
+type AAAProvider interface {
+	Provider
+
+	// EnsureAAA call is responsible for AAA realization on the provider.
+	EnsureAAA(context.Context, *EnsureAAARequest) error
+	// DeleteAAA call is responsible for AAA deletion on the provider.
+	DeleteAAA(context.Context, *DeleteAAARequest) error
+}
+
+type EnsureAAARequest struct {
+	AAA            *v1alpha1.AAA
+	ProviderConfig *ProviderConfig
+	// TACACSServerKeys contains the plain text keys for each TACACS+ server,
+	// keyed by server address.
+	TACACSServerKeys map[string]string
+	// RADIUSServerKeys contains the plain text shared secrets for each RADIUS server,
+	// keyed by server address.
+	RADIUSServerKeys map[string]string
+}
+
+type DeleteAAARequest struct {
+	AAA            *v1alpha1.AAA
+	ProviderConfig *ProviderConfig
 }
 
 type NVERequest struct {

@@ -41,7 +41,6 @@ func Run(cmd *exec.Cmd) (string, error) {
 	}
 
 	command := strings.Join(cmd.Args, " ")
-	// #nosec G705
 	_, _ = fmt.Fprintf(GinkgoWriter, "running: %s\n", command)
 
 	output, err := cmd.CombinedOutput()
