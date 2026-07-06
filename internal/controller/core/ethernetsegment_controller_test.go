@@ -37,11 +37,24 @@ var _ = Describe("EthernetSegment Controller", func() {
 			Expect(k8sClient.Create(ctx, device)).To(Succeed())
 			name = device.Name
 			key = client.ObjectKey{Name: name, Namespace: metav1.NamespaceDefault}
+
+			By("Waiting for the Device to reach Running phase")
+			Eventually(func(g Gomega) {
+				d := &v1alpha1.Device{}
+				g.Expect(k8sClient.Get(ctx, key, d)).To(Succeed())
+				g.Expect(d.Status.Phase).To(Equal(v1alpha1.DevicePhaseRunning))
+			}).Should(Succeed())
 		})
 
 		AfterEach(func() {
 			By("Cleaning up all EthernetSegment resources")
 			Expect(k8sClient.DeleteAllOf(ctx, &v1alpha1.EthernetSegment{}, client.InNamespace(metav1.NamespaceDefault))).To(Succeed())
+
+			By("Verifying the EthernetSegment is removed from the provider")
+			Eventually(func(g Gomega) {
+				_, exists := testProvider.GetEthernetSegment(name)
+				g.Expect(exists).To(BeFalse(), "Provider shouldn't have ESI configured anymore")
+			}).Should(Succeed())
 
 			By("Cleaning up test Interface resource")
 			intf := &v1alpha1.Interface{}
@@ -55,12 +68,6 @@ var _ = Describe("EthernetSegment Controller", func() {
 
 			By("Cleaning up the test Device resource")
 			Expect(k8sClient.Delete(ctx, device, client.PropagationPolicy(metav1.DeletePropagationForeground))).To(Succeed())
-
-			By("Verifying the EthernetSegment is removed from the provider")
-			Eventually(func(g Gomega) {
-				_, exists := testProvider.GetEthernetSegment(name)
-				g.Expect(exists).To(BeFalse(), "Provider shouldn't have ESI configured anymore")
-			}).Should(Succeed())
 		})
 
 		It("Should successfully reconcile an EthernetSegment", func() {
